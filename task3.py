@@ -235,8 +235,6 @@ def show_poll(room_id, sender):
         send_message_in_room(room_id, 'Poll not found or has not been created yet.')
 
 
-
-
 def create_poll(roomId, sender):
     teams_api.messages.create(toPersonEmail=sender, text="Cards Unsupported", attachments=[generate_start_poll_card(roomId)])
 
@@ -285,6 +283,10 @@ def process_card_response(data):
     elif 'poll_choice' in list(inputs.keys()):
         current_poll = all_polls[inputs['roomId']]
         current_poll.votes[int(inputs["poll_choice"])] += 1
+
+        user_email = teams_api.people.get(data.personId).emails[0] # get user email to reference later
+        send_direct_message(user_email, f'You voted for {inputs['option_text']} in {current_poll.name}') # formatted string to show what you voted for and in what poll
+
     return '200'
 
 def add_poll(poll_name, poll_description, room_id, author):
@@ -303,4 +305,4 @@ if __name__ == '__main__':
     teams_api = WebexAPI(access_token=WEBEX_TEAMS_ACCESS_TOKEN)
     create_webhook(teams_api, 'messages_webhook', '/messages_webhook', 'messages')
     create_webhook(teams_api, 'attachmentActions_webhook', '/attachmentActions_webhook', 'attachmentActions')
-    app.run(host='0.0.0.0', port=12000)
+    app.run(host='0.0.0.0', port=1200)
