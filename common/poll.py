@@ -6,6 +6,7 @@ class Poll:
         self.author = author
         self.options = {}
         self.votes = {}
+        self.voted_users = set()  # Track users who have voted
         self._last_option_index_added = 1
         self.started = False
 
@@ -14,8 +15,12 @@ class Poll:
         self.votes[self._last_option_index_added] = 0
         self._last_option_index_added += 1
 
-    def vote(self, option_num):
+    def vote(self, option_num, user_email):
+        if user_email in self.voted_users:
+            return False # if the user has already voted not allow for another to go through
         self.votes[option_num] += 1
+        self.voted_users.add(user_email)
+        return True
     
     def list_options(self):
         return self.options
