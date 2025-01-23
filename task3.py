@@ -282,10 +282,13 @@ def process_card_response(data):
         print(current_poll.options)
     elif 'poll_choice' in list(inputs.keys()):
         current_poll = all_polls[inputs['roomId']]
-        current_poll.votes[int(inputs["poll_choice"])] += 1
-
+        choice = int(inputs["poll_choice"])
         user_email = teams_api.people.get(data.personId).emails[0] # get user email to reference later
-        send_direct_message(user_email, f'You voted for {inputs['option_text']} in {current_poll.name}') # formatted string to show what you voted for and in what poll
+        vote_success = current_poll.vote(choice, user_email)  # vote will be a success if user email not in the set in the poll class to track voters       
+        if vote_success:
+            send_direct_message(user_email, f'You voted for {current_poll.options[choice]} in {current_poll.name}') # formatted string to show what you voted for and in what poll
+        else:
+            send_direct_message(user_email, 'You have already voted in this poll')
 
     return '200'
 
