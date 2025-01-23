@@ -1,4 +1,3 @@
-import json
 from common.poll import Poll
 from flask import Flask, request
 from dotenv import load_dotenv
@@ -18,8 +17,9 @@ if not WEBEX_TEAMS_ACCESS_TOKEN:
 
 teams_api = None
 all_polls = {}
+votes = set()
 
-commands = ['create poll', 'add option', 'start poll', 'end poll', 'help', 'show poll']
+commands = ['create poll', 'add option', 'start poll', 'end poll', 'help', 'show poll', 'remind to vote']
 
 app = Flask(__name__)
 @app.route('/messages_webhook', methods=['POST'])
@@ -40,32 +40,56 @@ def process_message(data):
         parse_message(command, data.personEmail, data.roomId)
         return '200'
 
-def parse_message(command, sender, roomId):
-        poll_run = False
-        if command not in commands:
-            send_message_in_room(roomId, 'command not recognized type help for list of commands')
-        if command == 'help':
-            send_message_in_room(roomId, 'The valid commands are: create poll, add option, start poll, end poll')
-        if command == "create poll":
-            if poll_run == True:
-                send_message_in_room(roomId, 'There is already a poll running. Please end the current poll to create a new one.')
-            elif poll_run == False:
-                if roomId not in list(all_polls.keys()):
-                    create_poll(roomId, sender)
-                    poll_run = True
-        elif command == "add option":
-            if all_polls[roomId]:
-                add_option(roomId, sender)
-        elif command == "start poll":
-            if all_polls[roomId]:
-                start_poll(roomId, sender)
-        elif command == "end poll":
-            if all_polls[roomId]:
-                end_poll(roomId, sender)
-                poll_run = False
-        elif command == 'show poll':
-            show_poll(roomId, sender)
+def remind_users_to_vote(roomId):
+    if roomId not in all_polls:
+        send_message_in_room(roomId, "No active poll in this room.")
         return
+
+    poll = all_polls[roomId]
+
+    # Fetch the list of all participants in the room
+    participants = teams_api.memberships.list(roomId=roomId)
+
+    # Get the email addresses of those who have already voted
+    users_who_voted = poll.votes.keys()
+
+    # Send reminders to users who have not voted
+    for participant in participants: # loops through the participants
+        user_email = participant.personEmail # sets participants email
+        if user_email not in users_who_voted: # checks if user has voted
+            send_direct_message(user_email, f"Reminder: You have not voted in the poll '{poll.name}' yet! Please cast your vote.")
+
+    send_message_in_room(roomId, "Reminder sent to users who have not voted.")
+
+
+
+def parse_message(command, sender, roomId):
+    if command not in commands:
+        send_message_in_room(roomId, 'Command not recognized. Type help for a list of commands.')
+    if command == 'help':
+        send_message_in_room(roomId, 'The valid commands are: create poll, add option, start poll, end poll, remind to vote')
+    if command == "create poll":
+        if roomId in list(all_polls.keys()):
+            if all_polls[roomId].started:   # checks to see if a poll is active
+                send_message_in_room(roomId, "Error: A poll has already started in this room. Please end the current poll before creating a new one.")
+            else:
+                create_poll(roomId, sender)
+        else:
+            create_poll(roomId, sender)
+    elif command == "add option":
+        if all_polls[roomId]:
+            add_option(roomId, sender)
+    elif command == "start poll":
+        if all_polls[roomId]:
+            start_poll(roomId, sender)
+    elif command == "end poll":
+        if all_polls[roomId]:
+            end_poll(roomId, sender)
+    elif command == 'remind to vote':
+        remind_users_to_vote(roomId)
+    elif command == 'show poll':
+        show_poll(roomId, sender)
+    return
 
 def generate_start_poll_card(roomId):
     return {
@@ -242,17 +266,21 @@ def show_poll(room_id, sender):
 
 
 def create_poll(roomId, sender):
-    teams_api.messages.create(toPersonEmail=sender, text="Cards Unsupported", attachments=[generate_start_poll_card(roomId)])
-    teams_api.messages.create(roomId, all_polls)
+    if roomId not in all_polls or (roomId in all_polls and not all_polls[roomId].started):
+        teams_api.messages.create(toPersonEmail=sender, text="Cards Unsupported", attachments=[generate_start_poll_card(roomId)])
+    else:
+        send_message_in_room(roomId, 'Poll already exists in this room. Please wait until the current poll ends.')
 
 def add_option(roomId, sender):
-    teams_api.messages.create(toPersonEmail=sender, text="Cards Unsupported", attachments=[generate_add_option_card(roomId)])
+    if all_polls[roomId]:
+        teams_api.messages.create(toPersonEmail=sender, text="Cards Unsupported", attachments=[generate_add_option_card(roomId)])
 
 def start_poll(roomId, sender):
-    if all_polls[roomId].author == sender:
-        if not all_polls[roomId].started:
-            all_polls[roomId].started = True
+    if all_polls[roomId].author == sender: 
+        if not all_polls[roomId].started: # checks for inactive polls to start 
+            all_polls[roomId].started = True # sets the value to true 
             teams_api.messages.create(roomId=roomId, text="Cards Unsupported", attachments=[generate_voting_card(roomId)])
+            
         else:
             send_message_in_room(roomId, "Error: poll already started")
     else:
@@ -260,9 +288,10 @@ def start_poll(roomId, sender):
 
 def end_poll(roomId, sender):
     if all_polls[roomId].author == sender:
-        if all_polls[roomId].started:
-            all_polls[roomId].started = False
+        if all_polls[roomId].started:   # checking for active poll to end
+            all_polls[roomId].started = False   # ending the poll
             teams_api.messages.create(roomId=roomId, text="Card Unsupported", attachments=[generate_results_card(roomId, all_polls[roomId].collate_results())])
+            del all_polls[roomId] # delete poll from dictionary
         else:
             send_message_in_room(roomId, "Error: poll hasn't been started yet")
     else:
@@ -277,6 +306,7 @@ def attachmentActions_webhook():
 
 def process_card_response(data):
     attachment = (teams_api.attachment_actions.get(data.id)).json_data
+    user_email = teams_api.people.get(data.personId).emails[0]
     inputs = attachment['inputs']
     if 'poll_name' in list(inputs.keys()):
         add_poll(inputs['poll_name'], inputs['poll_description'], inputs['roomId'], teams_api.people.get(data.personId).emails[0])
@@ -289,8 +319,7 @@ def process_card_response(data):
         print(current_poll.options)
     elif 'poll_choice' in list(inputs.keys()):
         current_poll = all_polls[inputs['roomId']]
-        choice = int(inputs["poll_choice"])
-        user_email = teams_api.people.get(data.personId).emails[0] # get user email to reference later
+        choice = int(inputs["poll_choice"]) 
         vote_success = current_poll.vote(choice, user_email)  # vote will be a success if user email not in the set in the poll class to track voters       
         if vote_success:
             send_direct_message(user_email, f'You voted for {current_poll.options[choice]} in {current_poll.name}') # formatted string to show what you voted for and in what poll
@@ -316,4 +345,3 @@ if __name__ == '__main__':
     create_webhook(teams_api, 'messages_webhook', '/messages_webhook', 'messages')
     create_webhook(teams_api, 'attachmentActions_webhook', '/attachmentActions_webhook', 'attachmentActions')
     app.run(host='0.0.0.0', port=1200)
-
