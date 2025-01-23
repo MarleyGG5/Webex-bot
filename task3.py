@@ -41,25 +41,31 @@ def process_message(data):
         return '200'
 
 def parse_message(command, sender, roomId):
-    if command not in commands:
-        send_message_in_room(roomId, 'command not recognized type help for list of commands')
-    if command == 'help':
-        send_message_in_room(roomId, 'The valid commands are: create poll, add option, start poll, end poll')
-    if command == "create poll":
-        if roomId not in list(all_polls.keys()):
-            create_poll(roomId, sender)
-    elif command == "add option":
-        if all_polls[roomId]:
-            add_option(roomId, sender)
-    elif command == "start poll":
-        if all_polls[roomId]:
-            start_poll(roomId, sender)
-    elif command == "end poll":
-        if all_polls[roomId]:
-            end_poll(roomId, sender)
-    elif command == 'show poll':
-        show_poll(roomId, sender)
-    return
+        poll_run = False
+        if command not in commands:
+            send_message_in_room(roomId, 'command not recognized type help for list of commands')
+        if command == 'help':
+            send_message_in_room(roomId, 'The valid commands are: create poll, add option, start poll, end poll')
+        if command == "create poll":
+            if poll_run == True:
+                send_message_in_room(roomId, 'There is already a poll running. Please end the current poll to create a new one.')
+            elif poll_run == False:
+                if roomId not in list(all_polls.keys()):
+                    create_poll(roomId, sender)
+                    poll_run = True
+        elif command == "add option":
+            if all_polls[roomId]:
+                add_option(roomId, sender)
+        elif command == "start poll":
+            if all_polls[roomId]:
+                start_poll(roomId, sender)
+        elif command == "end poll":
+            if all_polls[roomId]:
+                end_poll(roomId, sender)
+                poll_run = False
+        elif command == 'show poll':
+            show_poll(roomId, sender)
+        return
 
 def generate_start_poll_card(roomId):
     return {
@@ -237,6 +243,7 @@ def show_poll(room_id, sender):
 
 def create_poll(roomId, sender):
     teams_api.messages.create(toPersonEmail=sender, text="Cards Unsupported", attachments=[generate_start_poll_card(roomId)])
+    teams_api.messages.create(roomId, all_polls)
 
 def add_option(roomId, sender):
     teams_api.messages.create(toPersonEmail=sender, text="Cards Unsupported", attachments=[generate_add_option_card(roomId)])
@@ -309,3 +316,4 @@ if __name__ == '__main__':
     create_webhook(teams_api, 'messages_webhook', '/messages_webhook', 'messages')
     create_webhook(teams_api, 'attachmentActions_webhook', '/attachmentActions_webhook', 'attachmentActions')
     app.run(host='0.0.0.0', port=1200)
+
