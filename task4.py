@@ -73,16 +73,16 @@ def process_message(data):
         elif message.lower() == '/help':
             help_text = """
 Available commands:
-- save note: <your note> - Save a new note
-- show notes - Display all your saved notes
-- clear notes - Delete all your notes
-- help - Show this help message
+- /add <your note> - Save a new note
+- /show - Display all your saved notes
+- /clear - Delete all your notes
+- /help - Show this help message
 """
             send_direct_message(data.personEmail, help_text)
         
         # Handle unknown commands    
         else:
-            send_direct_message(data.personEmail, "I didn't understand that command. Type 'help' to see available commands.")
+            send_direct_message(data.personEmail, "I didn't understand that command. Type '/help' to see available commands.")
             
         return '200'
 
