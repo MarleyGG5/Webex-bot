@@ -61,8 +61,6 @@ def remind_users_to_vote(roomId):
 
     send_message_in_room(roomId, "Reminder sent to users who have not voted.")
 
-
-
 def parse_message(command, sender, roomId):
     if command not in commands:
         send_message_in_room(roomId, 'Command not recognized. Type help for a list of commands.')
